@@ -2,7 +2,7 @@
 	"name": "Exact connector trigger 10 min",
 	"properties": {
 		"annotations": [],
-		"runtimeState": "Stopped",
+		"runtimeState": "Started",
 		"pipelines": [
 			{
 				"pipelineReference": {
