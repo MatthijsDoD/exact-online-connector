@@ -1,0 +1,24 @@
+{
+	"name": "Main trigger",
+	"properties": {
+		"annotations": [],
+		"runtimeState": "Started",
+		"pipelines": [
+			{
+				"pipelineReference": {
+					"referenceName": "Main Pipeline",
+					"type": "PipelineReference"
+				}
+			}
+		],
+		"type": "ScheduleTrigger",
+		"typeProperties": {
+			"recurrence": {
+				"frequency": "Minute",
+				"interval": 10,
+				"startTime": "2022-12-13T14:17:00",
+				"timeZone": "W. Europe Standard Time"
+			}
+		}
+	}
+}
