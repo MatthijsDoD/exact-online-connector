@@ -1,0 +1,17 @@
+{
+	"name": "Exact connector trigger 10 min",
+	"properties": {
+		"annotations": [],
+		"runtimeState": "Stopped",
+		"pipelines": [],
+		"type": "ScheduleTrigger",
+		"typeProperties": {
+			"recurrence": {
+				"frequency": "Minute",
+				"interval": 10,
+				"startTime": "2022-12-13T14:56:00",
+				"timeZone": "W. Europe Standard Time"
+			}
+		}
+	}
+}
