@@ -1,0 +1,1780 @@
+{
+	"$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+		"factoryName": {
+			"type": "string",
+			"metadata": "Data Factory name",
+			"defaultValue": "azureTestApiExact"
+		},
+		"myBlobStorage_connectionString": {
+			"type": "secureString",
+			"metadata": "Secure string for 'connectionString' of 'myBlobStorage'"
+		},
+		"my_linked_sql_connection_connectionString": {
+			"type": "secureString",
+			"metadata": "Secure string for 'connectionString' of 'my_linked_sql_connection'"
+		},
+		"http_exactonline_properties_typeProperties_url": {
+			"type": "string",
+			"defaultValue": "https://start.exactonline.nl/"
+		},
+		"rest_exactonline_properties_typeProperties_url": {
+			"type": "string",
+			"defaultValue": "https://start.exactonline.nl/"
+		}
+	},
+	"variables": {
+		"factoryId": "[concat('Microsoft.DataFactory/factories/', parameters('factoryName'))]"
+	},
+	"resources": [
+		{
+			"name": "[concat(parameters('factoryName'), '/Check Duration')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "Get Time Passed",
+						"type": "Lookup",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "AzureSqlSource",
+								"sqlReaderQuery": "SELECT TimePassed =\nDATEDIFF(SECOND,InsertDate,SYSDATETIME())\nFROM etl.[AccessToken];",
+								"queryTimeout": "00:10:00",
+								"isolationLevel": "ReadCommitted",
+								"partitionOption": "None"
+							},
+							"dataset": {
+								"referenceName": "sql_last_accesstoken",
+								"type": "DatasetReference",
+								"parameters": {}
+							}
+						}
+					},
+					{
+						"name": "Check Duration",
+						"type": "IfCondition",
+						"dependsOn": [
+							{
+								"activity": "Get Time Passed",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"expression": {
+								"value": "@lessOrEquals(activity('Get Time Passed').output.firstRow.TimePassed,480)",
+								"type": "Expression"
+							},
+							"ifFalseActivities": [
+								{
+									"name": "Wait for 2 minutes",
+									"type": "SqlServerStoredProcedure",
+									"dependsOn": [],
+									"policy": {
+										"timeout": "0.12:00:00",
+										"retry": 0,
+										"retryIntervalInSeconds": 30,
+										"secureOutput": false,
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"storedProcedureName": "sp_executesql",
+										"storedProcedureParameters": {
+											"stmt": {
+												"value": "WAITFOR DELAY '00:02'",
+												"type": "String"
+											}
+										}
+									},
+									"linkedServiceName": {
+										"referenceName": "my_linked_sql_connection",
+										"type": "LinkedServiceReference"
+									}
+								},
+								{
+									"name": "refresh_accesstoken",
+									"type": "ExecutePipeline",
+									"dependsOn": [
+										{
+											"activity": "Wait for 2 minutes",
+											"dependencyConditions": [
+												"Succeeded"
+											]
+										}
+									],
+									"userProperties": [],
+									"typeProperties": {
+										"pipeline": {
+											"referenceName": "Exact connector",
+											"type": "PipelineReference"
+										},
+										"waitOnCompletion": true,
+										"parameters": {}
+									}
+								}
+							]
+						}
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {},
+					"cancelAfter": {}
+				},
+				"variables": {
+					"insert_date": {
+						"type": "String"
+					},
+					"insertdate": {
+						"type": "String"
+					},
+					"refreshtoken_new": {
+						"type": "String"
+					}
+				},
+				"annotations": [],
+				"lastPublishTime": "2022-12-13T10:55:38Z"
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/sql_last_accesstoken')]",
+				"[concat(variables('factoryId'), '/linkedServices/my_linked_sql_connection')]",
+				"[concat(variables('factoryId'), '/pipelines/Exact connector')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/Exact connector')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "Get Last Refresh Token",
+						"type": "Lookup",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "AzureSqlSource",
+								"queryTimeout": "00:10:00",
+								"partitionOption": "None"
+							},
+							"dataset": {
+								"referenceName": "sql_last_refreshtoken",
+								"type": "DatasetReference",
+								"parameters": {}
+							},
+							"firstRowOnly": true
+						}
+					},
+					{
+						"name": "Set Old Refresh Token",
+						"type": "SetVariable",
+						"dependsOn": [
+							{
+								"activity": "Get Last Refresh Token",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"variableName": "refreshtoken_old",
+							"value": {
+								"value": "@activity('Get Last Refresh Token').output.firstRow.RefreshToken",
+								"type": "Expression"
+							}
+						}
+					},
+					{
+						"name": "Get Access Token",
+						"type": "WebActivity",
+						"dependsOn": [
+							{
+								"activity": "Set Old Refresh Token",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"url": "https://start.exactonline.nl/api/oauth2/token",
+							"method": "POST",
+							"headers": {
+								"Content-Type": "application/x-www-form-urlencoded"
+							},
+							"body": {
+								"value": "@concat('grant_type=refresh_token&client_id=dd0c77c1-fec2-4ca0-a53e-0919ec103a90&client_secret=h2eV3eKu0LuU&refresh_token=', variables('refreshtoken_old'))",
+								"type": "Expression"
+							}
+						}
+					},
+					{
+						"name": "Set New Access Token",
+						"type": "SetVariable",
+						"dependsOn": [
+							{
+								"activity": "Get Access Token",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"variableName": "accesstoken",
+							"value": {
+								"value": "@activity('Get Access Token').output.access_token",
+								"type": "Expression"
+							}
+						}
+					},
+					{
+						"name": "Set New Refresh Token",
+						"type": "SetVariable",
+						"dependsOn": [
+							{
+								"activity": "Set New Access Token",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"variableName": "refreshtoken_new",
+							"value": {
+								"value": "@activity('Get Access Token').output.refresh_token",
+								"type": "Expression"
+							}
+						}
+					},
+					{
+						"name": "Write Tokens to DB",
+						"type": "SqlServerStoredProcedure",
+						"dependsOn": [
+							{
+								"activity": "Set Insert Date",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"storedProcedureName": "sp_executesql",
+							"storedProcedureParameters": {
+								"stmt": {
+									"value": {
+										"value": "@concat('TRUNCATE TABLE etl.RefreshToken; TRUNCATE TABLE etl.AccessToken; INSERT INTO etl.RefreshToken([RefreshToken]) VALUES(''',variables('refreshtoken_new'),'''); INSERT INTO etl.AccessToken([AccessToken]) VALUES(''',variables('accesstoken'),'''); UPDATE [etl].[AccessToken] SET InsertDate = (''', variables('insertdate'), '''); ')",
+										"type": "Expression"
+									},
+									"type": "String"
+								}
+							}
+						},
+						"linkedServiceName": {
+							"referenceName": "my_linked_sql_connection",
+							"type": "LinkedServiceReference"
+						}
+					},
+					{
+						"name": "Set Insert Date",
+						"type": "SetVariable",
+						"dependsOn": [
+							{
+								"activity": "Set New Refresh Token",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"variableName": "insertdate",
+							"value": {
+								"value": "@pipeline().TriggerTime",
+								"type": "Expression"
+							}
+						}
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {},
+					"cancelAfter": {}
+				},
+				"variables": {
+					"refreshtoken_old": {
+						"type": "String"
+					},
+					"accesstoken": {
+						"type": "String"
+					},
+					"refreshtoken_new": {
+						"type": "String"
+					},
+					"insertdate": {
+						"type": "String"
+					}
+				},
+				"annotations": [],
+				"lastPublishTime": "2022-12-13T10:55:38Z"
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/sql_last_refreshtoken')]",
+				"[concat(variables('factoryId'), '/linkedServices/my_linked_sql_connection')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/Loop Over Divisions')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "Retrieve Access Token",
+						"type": "Lookup",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "AzureSqlSource",
+								"queryTimeout": "02:00:00",
+								"isolationLevel": "ReadCommitted",
+								"partitionOption": "None"
+							},
+							"dataset": {
+								"referenceName": "sql_last_accesstoken",
+								"type": "DatasetReference",
+								"parameters": {}
+							}
+						}
+					},
+					{
+						"name": "Get Division Codes",
+						"type": "Lookup",
+						"dependsOn": [
+							{
+								"activity": "Retrieve Access Token",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "AzureSqlSource",
+								"sqlReaderQuery": "SELECT DivisionCode = CONVERT(VARCHAR(50),Code)\nFROM staging.Divisions",
+								"queryTimeout": "02:00:00",
+								"isolationLevel": "ReadCommitted",
+								"partitionOption": "None"
+							},
+							"dataset": {
+								"referenceName": "sql_divisions",
+								"type": "DatasetReference",
+								"parameters": {}
+							},
+							"firstRowOnly": false
+						}
+					},
+					{
+						"name": "Loop Over Divisions",
+						"type": "ForEach",
+						"dependsOn": [
+							{
+								"activity": "Get Division Codes",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"items": {
+								"value": "@activity('Get Division Codes').output.value",
+								"type": "Expression"
+							},
+							"activities": [
+								{
+									"name": "Copy Project to Blob for one Division",
+									"type": "Copy",
+									"dependsOn": [],
+									"policy": {
+										"timeout": "0.12:00:00",
+										"retry": 0,
+										"retryIntervalInSeconds": 30,
+										"secureOutput": false,
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"source": {
+											"type": "RestSource",
+											"httpRequestTimeout": "00:01:40",
+											"requestInterval": "00.00:00:00.010",
+											"requestMethod": "GET",
+											"additionalHeaders": {
+												"Authorization": {
+													"value": "@concat('Bearer ',activity('Retrieve Access Token').output.firstRow.AccessToken)",
+													"type": "Expression"
+												}
+											},
+											"paginationRules": {
+												"AbsoluteUrl": "$d._next"
+											}
+										},
+										"sink": {
+											"type": "DelimitedTextSink",
+											"storeSettings": {
+												"type": "AzureBlobStorageWriteSettings"
+											},
+											"formatSettings": {
+												"type": "DelimitedTextWriteSettings",
+												"quoteAllText": true,
+												"fileExtension": ".txt"
+											}
+										},
+										"enableStaging": false,
+										"translator": {
+											"type": "TabularTranslator",
+											"mappings": [
+												{
+													"source": {
+														"path": "$['d']['results'][0]['__metadata']['uri']"
+													},
+													"sink": {
+														"name": "d_results'][0]['__metadata_uri",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['__metadata']['type']"
+													},
+													"sink": {
+														"name": "type",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['Account']"
+													},
+													"sink": {
+														"name": "Account",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['AccountContact']"
+													},
+													"sink": {
+														"name": "AccountContact",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['AccountCode']"
+													},
+													"sink": {
+														"name": "AccountCode",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['AccountName']"
+													},
+													"sink": {
+														"name": "AccountName",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['AllowAdditionalInvoicing']"
+													},
+													"sink": {
+														"name": "AllowAdditionalInvoicing",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['BlockEntry']"
+													},
+													"sink": {
+														"name": "BlockEntry",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['BlockPlanning']"
+													},
+													"sink": {
+														"name": "BlockPlanning",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['BudgetedAmount']"
+													},
+													"sink": {
+														"name": "BudgetedAmount",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['BudgetedCosts']"
+													},
+													"sink": {
+														"name": "BudgetedCosts",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['BudgetedHoursPerHourType']['__deferred']['uri']"
+													},
+													"sink": {
+														"name": "d_results'][0]['BudgetedHoursPerHourType___deferred_uri",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['BudgetedRevenue']"
+													},
+													"sink": {
+														"name": "BudgetedRevenue",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['BudgetType']"
+													},
+													"sink": {
+														"name": "BudgetType",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['BudgetTypeDescription']"
+													},
+													"sink": {
+														"name": "BudgetTypeDescription",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['BlockPurchasing']"
+													},
+													"sink": {
+														"name": "BlockPurchasing",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['BlockRebilling']"
+													},
+													"sink": {
+														"name": "BlockRebilling",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['Classification']"
+													},
+													"sink": {
+														"name": "Classification",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['ClassificationDescription']"
+													},
+													"sink": {
+														"name": "ClassificationDescription",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['Code']"
+													},
+													"sink": {
+														"name": "Code",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['CostsAmountFC']"
+													},
+													"sink": {
+														"name": "CostsAmountFC",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['Created']"
+													},
+													"sink": {
+														"name": "Created",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['Creator']"
+													},
+													"sink": {
+														"name": "Creator",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['CreatorFullName']"
+													},
+													"sink": {
+														"name": "CreatorFullName",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['CustomerPOnumber']"
+													},
+													"sink": {
+														"name": "CustomerPOnumber",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['Description']"
+													},
+													"sink": {
+														"name": "Description",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['Division']"
+													},
+													"sink": {
+														"name": "Division",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['DivisionName']"
+													},
+													"sink": {
+														"name": "DivisionName",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['EndDate']"
+													},
+													"sink": {
+														"name": "EndDate",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['FixedPriceItem']"
+													},
+													"sink": {
+														"name": "FixedPriceItem",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['FixedPriceItemDescription']"
+													},
+													"sink": {
+														"name": "FixedPriceItemDescription",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['HasWBSLines']"
+													},
+													"sink": {
+														"name": "HasWBSLines",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['ID']"
+													},
+													"sink": {
+														"name": "ID",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['IncludeInvoiceSpecification']"
+													},
+													"sink": {
+														"name": "IncludeInvoiceSpecification",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['IncludeSpecificationInInvoicePdf']"
+													},
+													"sink": {
+														"name": "IncludeSpecificationInInvoicePdf",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['InvoiceAddress']"
+													},
+													"sink": {
+														"name": "InvoiceAddress",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['InvoiceAsQuoted']"
+													},
+													"sink": {
+														"name": "InvoiceAsQuoted",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['InvoiceTerms']['__deferred']['uri']"
+													},
+													"sink": {
+														"name": "d_results'][0]['InvoiceTerms___deferred_uri",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['Manager']"
+													},
+													"sink": {
+														"name": "Manager",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['ManagerFullname']"
+													},
+													"sink": {
+														"name": "ManagerFullname",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['MarkupPercentage']"
+													},
+													"sink": {
+														"name": "MarkupPercentage",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['Modified']"
+													},
+													"sink": {
+														"name": "Modified",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['Modifier']"
+													},
+													"sink": {
+														"name": "Modifier",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['ModifierFullName']"
+													},
+													"sink": {
+														"name": "ModifierFullName",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['Notes']"
+													},
+													"sink": {
+														"name": "Notes",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['InternalNotes']"
+													},
+													"sink": {
+														"name": "InternalNotes",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['ProjectRestrictionEmployees']['__deferred']['uri']"
+													},
+													"sink": {
+														"name": "d_results'][0]['ProjectRestrictionEmployees___deferred_uri",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['ProjectRestrictionItems']['__deferred']['uri']"
+													},
+													"sink": {
+														"name": "d_results'][0]['ProjectRestrictionItems___deferred_uri",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['ProjectRestrictionRebillings']['__deferred']['uri']"
+													},
+													"sink": {
+														"name": "d_results'][0]['ProjectRestrictionRebillings___deferred_uri",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['SalesTimeQuantity']"
+													},
+													"sink": {
+														"name": "SalesTimeQuantity",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['SourceQuotation']"
+													},
+													"sink": {
+														"name": "SourceQuotation",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['StartDate']"
+													},
+													"sink": {
+														"name": "StartDate",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['TimeQuantityToAlert']"
+													},
+													"sink": {
+														"name": "TimeQuantityToAlert",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['Type']"
+													},
+													"sink": {
+														"name": "Type",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['TypeDescription']"
+													},
+													"sink": {
+														"name": "TypeDescription",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['PrepaidItem']"
+													},
+													"sink": {
+														"name": "PrepaidItem",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['PrepaidItemDescription']"
+													},
+													"sink": {
+														"name": "PrepaidItemDescription",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['PrepaidType']"
+													},
+													"sink": {
+														"name": "PrepaidType",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['PrepaidTypeDescription']"
+													},
+													"sink": {
+														"name": "PrepaidTypeDescription",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['UseBillingMilestones']"
+													},
+													"sink": {
+														"name": "UseBillingMilestones",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['BudgetOverrunHours']"
+													},
+													"sink": {
+														"name": "BudgetOverrunHours",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['CustomField']"
+													},
+													"sink": {
+														"name": "CustomField",
+														"type": "String"
+													}
+												},
+												{
+													"source": {
+														"path": "$['d']['results'][0]['AllowMemberEntryOnly']"
+													},
+													"sink": {
+														"name": "AllowMemberEntryOnly",
+														"type": "String"
+													}
+												}
+											],
+											"collectionReference": "$['d']['results']",
+											"mapComplexValuesToString": true
+										}
+									},
+									"inputs": [
+										{
+											"referenceName": "rest_project",
+											"type": "DatasetReference",
+											"parameters": {
+												"DivisionCode": {
+													"value": "@{item().DivisionCode}",
+													"type": "Expression"
+												}
+											}
+										}
+									],
+									"outputs": [
+										{
+											"referenceName": "csv_generic",
+											"type": "DatasetReference",
+											"parameters": {
+												"Layer": "raw",
+												"FolderName": {
+													"value": "@toLower('')",
+													"type": "Expression"
+												},
+												"DivisionName": {
+													"value": "@concat('/',item().DivisionCode)",
+													"type": "Expression"
+												},
+												"FileNamePrefix": {
+													"value": "@toLower('')",
+													"type": "Expression"
+												},
+												"FileName": "project.csv",
+												"Subject": "project"
+											}
+										}
+									]
+								}
+							]
+						}
+					},
+					{
+						"name": "Check Duration",
+						"type": "ExecutePipeline",
+						"dependsOn": [
+							{
+								"activity": "Loop Over Divisions",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"pipeline": {
+								"referenceName": "Check Duration",
+								"type": "PipelineReference"
+							},
+							"waitOnCompletion": true,
+							"parameters": {}
+						}
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {},
+					"cancelAfter": {}
+				},
+				"variables": {
+					"insert_date": {
+						"type": "String"
+					},
+					"insertdate": {
+						"type": "String"
+					},
+					"refreshtoken_new": {
+						"type": "String"
+					}
+				},
+				"annotations": [],
+				"lastPublishTime": "2022-12-13T10:55:38Z"
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/sql_last_accesstoken')]",
+				"[concat(variables('factoryId'), '/datasets/sql_divisions')]",
+				"[concat(variables('factoryId'), '/pipelines/Check Duration')]",
+				"[concat(variables('factoryId'), '/datasets/rest_project')]",
+				"[concat(variables('factoryId'), '/datasets/csv_generic')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/Main Pipeline')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "Refresh Accesstoken",
+						"type": "ExecutePipeline",
+						"dependsOn": [],
+						"userProperties": [],
+						"typeProperties": {
+							"pipeline": {
+								"referenceName": "Exact connector",
+								"type": "PipelineReference"
+							},
+							"waitOnCompletion": true,
+							"parameters": {}
+						}
+					},
+					{
+						"name": "Retrieve Divisions",
+						"type": "ExecutePipeline",
+						"dependsOn": [
+							{
+								"activity": "Refresh Accesstoken",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"pipeline": {
+								"referenceName": "Retrieve Divisions",
+								"type": "PipelineReference"
+							},
+							"waitOnCompletion": true,
+							"parameters": {}
+						}
+					},
+					{
+						"name": "Loop Over Divisions",
+						"type": "ExecutePipeline",
+						"dependsOn": [
+							{
+								"activity": "Retrieve Divisions",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"pipeline": {
+								"referenceName": "Loop Over Divisions",
+								"type": "PipelineReference"
+							},
+							"waitOnCompletion": true,
+							"parameters": {}
+						}
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {},
+					"cancelAfter": {}
+				},
+				"annotations": [],
+				"lastPublishTime": "2022-12-13T11:01:40Z"
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/pipelines/Exact connector')]",
+				"[concat(variables('factoryId'), '/pipelines/Retrieve Divisions')]",
+				"[concat(variables('factoryId'), '/pipelines/Loop Over Divisions')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/Retrieve Divisions')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "Retrieve Access Token",
+						"type": "Lookup",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "AzureSqlSource",
+								"queryTimeout": "00:10:00",
+								"isolationLevel": "ReadCommitted",
+								"partitionOption": "None"
+							},
+							"dataset": {
+								"referenceName": "sql_last_accesstoken",
+								"type": "DatasetReference",
+								"parameters": {}
+							}
+						}
+					},
+					{
+						"name": "Copy Divisions to Blob",
+						"type": "Copy",
+						"dependsOn": [
+							{
+								"activity": "Retrieve Access Token",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "XmlSource",
+								"storeSettings": {
+									"type": "HttpReadSettings",
+									"requestMethod": "GET",
+									"additionalHeaders": {
+										"value": "@{concat('Authorization:Bearer ', activity('Retrieve Access Token').output.firstRow.AccessToken)}",
+										"type": "Expression"
+									},
+									"requestTimeout": ""
+								},
+								"formatSettings": {
+									"type": "XmlReadSettings",
+									"validationMode": "none",
+									"namespaces": true
+								}
+							},
+							"sink": {
+								"type": "DelimitedTextSink",
+								"storeSettings": {
+									"type": "AzureBlobStorageWriteSettings"
+								},
+								"formatSettings": {
+									"type": "DelimitedTextWriteSettings",
+									"quoteAllText": true,
+									"fileExtension": ".txt"
+								}
+							},
+							"enableStaging": false,
+							"translator": {
+								"type": "TabularTranslator",
+								"mappings": [
+									{
+										"source": {
+											"path": "$['Administrations']['Administration']['Description']"
+										},
+										"sink": {
+											"name": "Description",
+											"type": "String"
+										}
+									},
+									{
+										"source": {
+											"path": "$['Administrations']['Administration']['@Code']"
+										},
+										"sink": {
+											"name": "Code",
+											"type": "String"
+										}
+									},
+									{
+										"source": {
+											"path": "$['Administrations']['Administration']['@HID']"
+										},
+										"sink": {
+											"name": "HID",
+											"type": "String"
+										}
+									}
+								],
+								"collectionReference": ""
+							}
+						},
+						"inputs": [
+							{
+								"referenceName": "http_xml_divisions",
+								"type": "DatasetReference",
+								"parameters": {}
+							}
+						],
+						"outputs": [
+							{
+								"referenceName": "csv_raw_divisions",
+								"type": "DatasetReference",
+								"parameters": {}
+							}
+						]
+					},
+					{
+						"name": "Copy Divisions to SQL",
+						"type": "Copy",
+						"dependsOn": [
+							{
+								"activity": "Copy Divisions to Blob",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "DelimitedTextSource",
+								"storeSettings": {
+									"type": "AzureBlobStorageReadSettings",
+									"recursive": true,
+									"enablePartitionDiscovery": false
+								},
+								"formatSettings": {
+									"type": "DelimitedTextReadSettings"
+								}
+							},
+							"sink": {
+								"type": "AzureSqlSink",
+								"preCopyScript": "TRUNCATE TABLE staging.Divisions",
+								"disableMetricsCollection": false
+							},
+							"enableStaging": false,
+							"translator": {
+								"type": "TabularTranslator",
+								"mappings": [
+									{
+										"source": {
+											"name": "Description",
+											"type": "String",
+											"physicalType": "String"
+										},
+										"sink": {
+											"name": "Description",
+											"type": "String",
+											"physicalType": "varchar"
+										}
+									},
+									{
+										"source": {
+											"name": "Code",
+											"type": "String",
+											"physicalType": "String"
+										},
+										"sink": {
+											"name": "Code",
+											"type": "Int32",
+											"physicalType": "int"
+										}
+									},
+									{
+										"source": {
+											"name": "HID",
+											"type": "String",
+											"physicalType": "String"
+										},
+										"sink": {
+											"name": "HID",
+											"type": "Int32",
+											"physicalType": "int"
+										}
+									}
+								],
+								"typeConversion": true,
+								"typeConversionSettings": {
+									"allowDataTruncation": false,
+									"treatBooleanAsNumber": false
+								}
+							}
+						},
+						"inputs": [
+							{
+								"referenceName": "csv_raw_divisions",
+								"type": "DatasetReference",
+								"parameters": {}
+							}
+						],
+						"outputs": [
+							{
+								"referenceName": "sql_divisions",
+								"type": "DatasetReference",
+								"parameters": {}
+							}
+						]
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {},
+					"cancelAfter": {}
+				},
+				"variables": {
+					"insert_date": {
+						"type": "String"
+					},
+					"insertdate": {
+						"type": "String"
+					},
+					"refreshtoken_new": {
+						"type": "String"
+					}
+				},
+				"annotations": [],
+				"lastPublishTime": "2022-12-13T10:55:38Z"
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/sql_last_accesstoken')]",
+				"[concat(variables('factoryId'), '/datasets/http_xml_divisions')]",
+				"[concat(variables('factoryId'), '/datasets/csv_raw_divisions')]",
+				"[concat(variables('factoryId'), '/datasets/sql_divisions')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/csv_generic')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "myBlobStorage",
+					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"Layer": {
+						"type": "string"
+					},
+					"FolderName": {
+						"type": "string"
+					},
+					"DivisionName": {
+						"type": "string"
+					},
+					"FileNamePrefix": {
+						"type": "string"
+					},
+					"FileName": {
+						"type": "string"
+					},
+					"Subject": {
+						"type": "string"
+					}
+				},
+				"annotations": [],
+				"type": "DelimitedText",
+				"typeProperties": {
+					"location": {
+						"type": "AzureBlobStorageLocation",
+						"fileName": {
+							"value": "@concat(dataset().FileNamePrefix,dataset().FileName)",
+							"type": "Expression"
+						},
+						"folderPath": {
+							"value": "@concat(dataset().Layer,'/',dataset().Subject,dataset().DivisionName,dataset().FolderName)",
+							"type": "Expression"
+						},
+						"container": "my-datalake-dev"
+					},
+					"columnDelimiter": "|",
+					"escapeChar": "\\",
+					"firstRowAsHeader": true,
+					"quoteChar": "\""
+				},
+				"schema": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/myBlobStorage')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/csv_raw_divisions')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "myBlobStorage",
+					"type": "LinkedServiceReference"
+				},
+				"annotations": [],
+				"type": "DelimitedText",
+				"typeProperties": {
+					"location": {
+						"type": "AzureBlobStorageLocation",
+						"fileName": "Divisions.csv",
+						"folderPath": "raw/divisions",
+						"container": "my-datalake-dev"
+					},
+					"columnDelimiter": "|",
+					"escapeChar": "\\",
+					"firstRowAsHeader": true,
+					"quoteChar": "\""
+				},
+				"schema": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/myBlobStorage')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/http_xml_divisions')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "http_exactonline",
+					"type": "LinkedServiceReference"
+				},
+				"annotations": [],
+				"type": "Xml",
+				"typeProperties": {
+					"location": {
+						"type": "HttpServerLocation",
+						"relativeUrl": "/docs/XMLDivisions.aspx"
+					}
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/http_exactonline')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/rest_project')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "rest_exactonline",
+					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"DivisionCode": {
+						"type": "string"
+					}
+				},
+				"annotations": [],
+				"type": "RestResource",
+				"typeProperties": {
+					"relativeUrl": {
+						"value": "@concat('/api/v1/',dataset().DivisionCode,'/project/Projects?')",
+						"type": "Expression"
+					}
+				},
+				"schema": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/rest_exactonline')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/sql_divisions')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "my_linked_sql_connection",
+					"type": "LinkedServiceReference"
+				},
+				"annotations": [],
+				"type": "AzureSqlTable",
+				"schema": [
+					{
+						"name": "Description",
+						"type": "varchar"
+					},
+					{
+						"name": "Code",
+						"type": "int",
+						"precision": 10
+					},
+					{
+						"name": "HID",
+						"type": "int",
+						"precision": 10
+					}
+				],
+				"typeProperties": {
+					"schema": "staging",
+					"table": "Divisions"
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/my_linked_sql_connection')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/sql_last_accesstoken')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "my_linked_sql_connection",
+					"type": "LinkedServiceReference"
+				},
+				"annotations": [],
+				"type": "AzureSqlTable",
+				"schema": [],
+				"typeProperties": {
+					"schema": "etl",
+					"table": "AccessToken"
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/my_linked_sql_connection')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/sql_last_refreshtoken')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "my_linked_sql_connection",
+					"type": "LinkedServiceReference"
+				},
+				"annotations": [],
+				"type": "AzureSqlTable",
+				"schema": [],
+				"typeProperties": {
+					"schema": "etl",
+					"table": "RefreshToken"
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/my_linked_sql_connection')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/http_exactonline')]",
+			"type": "Microsoft.DataFactory/factories/linkedServices",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"annotations": [],
+				"type": "HttpServer",
+				"typeProperties": {
+					"url": "[parameters('http_exactonline_properties_typeProperties_url')]",
+					"enableServerCertificateValidation": false,
+					"authenticationType": "Anonymous"
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/myBlobStorage')]",
+			"type": "Microsoft.DataFactory/factories/linkedServices",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"annotations": [],
+				"type": "AzureBlobStorage",
+				"typeProperties": {
+					"connectionString": "[parameters('myBlobStorage_connectionString')]"
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/my_linked_sql_connection')]",
+			"type": "Microsoft.DataFactory/factories/linkedServices",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"annotations": [],
+				"type": "AzureSqlDatabase",
+				"typeProperties": {
+					"connectionString": "[parameters('my_linked_sql_connection_connectionString')]"
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/rest_exactonline')]",
+			"type": "Microsoft.DataFactory/factories/linkedServices",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"annotations": [],
+				"type": "RestService",
+				"typeProperties": {
+					"url": "[parameters('rest_exactonline_properties_typeProperties_url')]",
+					"enableServerCertificateValidation": false,
+					"authenticationType": "Anonymous"
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/Exact connector trigger 10 min')]",
+			"type": "Microsoft.DataFactory/factories/triggers",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"annotations": [],
+				"runtimeState": "Started",
+				"pipelines": [
+					{
+						"pipelineReference": {
+							"referenceName": "Main Pipeline",
+							"type": "PipelineReference"
+						},
+						"parameters": {}
+					}
+				],
+				"type": "ScheduleTrigger",
+				"typeProperties": {
+					"recurrence": {
+						"frequency": "Minute",
+						"interval": 10,
+						"startTime": "2022-12-13T15:04:34",
+						"timeZone": "W. Europe Standard Time"
+					}
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/pipelines/Main Pipeline')]"
+			]
+		}
+	]
+}
