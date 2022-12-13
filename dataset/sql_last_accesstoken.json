@@ -1,0 +1,17 @@
+{
+	"name": "sql_last_accesstoken",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "my_linked_sql_connection",
+			"type": "LinkedServiceReference"
+		},
+		"annotations": [],
+		"type": "AzureSqlTable",
+		"schema": [],
+		"typeProperties": {
+			"schema": "etl",
+			"table": "AccessToken"
+		}
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

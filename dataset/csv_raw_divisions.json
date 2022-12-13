@@ -1,0 +1,25 @@
+{
+	"name": "csv_raw_divisions",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "myBlobStorage",
+			"type": "LinkedServiceReference"
+		},
+		"annotations": [],
+		"type": "DelimitedText",
+		"typeProperties": {
+			"location": {
+				"type": "AzureBlobStorageLocation",
+				"fileName": "Divisions.csv",
+				"folderPath": "raw/divisions",
+				"container": "my-datalake-dev"
+			},
+			"columnDelimiter": "|",
+			"escapeChar": "\\",
+			"firstRowAsHeader": true,
+			"quoteChar": "\""
+		},
+		"schema": []
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

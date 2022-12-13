@@ -1,0 +1,24 @@
+{
+	"name": "rest_project",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "rest_exactonline",
+			"type": "LinkedServiceReference"
+		},
+		"parameters": {
+			"DivisionCode": {
+				"type": "string"
+			}
+		},
+		"annotations": [],
+		"type": "RestResource",
+		"typeProperties": {
+			"relativeUrl": {
+				"value": "@concat('/api/v1/',dataset().DivisionCode,'/project/Projects?')",
+				"type": "Expression"
+			}
+		},
+		"schema": []
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

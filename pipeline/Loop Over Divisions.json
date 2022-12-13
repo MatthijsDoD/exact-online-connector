@@ -1,0 +1,772 @@
+{
+	"name": "Loop Over Divisions",
+	"properties": {
+		"activities": [
+			{
+				"name": "Retrieve Access Token",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"queryTimeout": "02:00:00",
+						"isolationLevel": "ReadCommitted",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "sql_last_accesstoken",
+						"type": "DatasetReference"
+					}
+				}
+			},
+			{
+				"name": "Get Division Codes",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "Retrieve Access Token",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": "SELECT DivisionCode = CONVERT(VARCHAR(50),Code)\nFROM staging.Divisions",
+						"queryTimeout": "02:00:00",
+						"isolationLevel": "ReadCommitted",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "sql_divisions",
+						"type": "DatasetReference"
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "Loop Over Divisions",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Get Division Codes",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Get Division Codes').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "Copy Project to Blob for one Division",
+							"type": "Copy",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "RestSource",
+									"httpRequestTimeout": "00:01:40",
+									"requestInterval": "00.00:00:00.010",
+									"requestMethod": "GET",
+									"additionalHeaders": {
+										"Authorization": {
+											"value": "@concat('Bearer ',activity('Retrieve Access Token').output.firstRow.AccessToken)",
+											"type": "Expression"
+										}
+									},
+									"paginationRules": {
+										"AbsoluteUrl": "$d._next"
+									}
+								},
+								"sink": {
+									"type": "DelimitedTextSink",
+									"storeSettings": {
+										"type": "AzureBlobStorageWriteSettings"
+									},
+									"formatSettings": {
+										"type": "DelimitedTextWriteSettings",
+										"quoteAllText": true,
+										"fileExtension": ".txt"
+									}
+								},
+								"enableStaging": false,
+								"translator": {
+									"type": "TabularTranslator",
+									"mappings": [
+										{
+											"source": {
+												"path": "$['d']['results'][0]['__metadata']['uri']"
+											},
+											"sink": {
+												"name": "d_results'][0]['__metadata_uri",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['__metadata']['type']"
+											},
+											"sink": {
+												"name": "type",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['Account']"
+											},
+											"sink": {
+												"name": "Account",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['AccountContact']"
+											},
+											"sink": {
+												"name": "AccountContact",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['AccountCode']"
+											},
+											"sink": {
+												"name": "AccountCode",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['AccountName']"
+											},
+											"sink": {
+												"name": "AccountName",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['AllowAdditionalInvoicing']"
+											},
+											"sink": {
+												"name": "AllowAdditionalInvoicing",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['BlockEntry']"
+											},
+											"sink": {
+												"name": "BlockEntry",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['BlockPlanning']"
+											},
+											"sink": {
+												"name": "BlockPlanning",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['BudgetedAmount']"
+											},
+											"sink": {
+												"name": "BudgetedAmount",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['BudgetedCosts']"
+											},
+											"sink": {
+												"name": "BudgetedCosts",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['BudgetedHoursPerHourType']['__deferred']['uri']"
+											},
+											"sink": {
+												"name": "d_results'][0]['BudgetedHoursPerHourType___deferred_uri",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['BudgetedRevenue']"
+											},
+											"sink": {
+												"name": "BudgetedRevenue",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['BudgetType']"
+											},
+											"sink": {
+												"name": "BudgetType",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['BudgetTypeDescription']"
+											},
+											"sink": {
+												"name": "BudgetTypeDescription",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['BlockPurchasing']"
+											},
+											"sink": {
+												"name": "BlockPurchasing",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['BlockRebilling']"
+											},
+											"sink": {
+												"name": "BlockRebilling",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['Classification']"
+											},
+											"sink": {
+												"name": "Classification",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['ClassificationDescription']"
+											},
+											"sink": {
+												"name": "ClassificationDescription",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['Code']"
+											},
+											"sink": {
+												"name": "Code",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['CostsAmountFC']"
+											},
+											"sink": {
+												"name": "CostsAmountFC",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['Created']"
+											},
+											"sink": {
+												"name": "Created",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['Creator']"
+											},
+											"sink": {
+												"name": "Creator",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['CreatorFullName']"
+											},
+											"sink": {
+												"name": "CreatorFullName",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['CustomerPOnumber']"
+											},
+											"sink": {
+												"name": "CustomerPOnumber",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['Description']"
+											},
+											"sink": {
+												"name": "Description",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['Division']"
+											},
+											"sink": {
+												"name": "Division",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['DivisionName']"
+											},
+											"sink": {
+												"name": "DivisionName",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['EndDate']"
+											},
+											"sink": {
+												"name": "EndDate",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['FixedPriceItem']"
+											},
+											"sink": {
+												"name": "FixedPriceItem",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['FixedPriceItemDescription']"
+											},
+											"sink": {
+												"name": "FixedPriceItemDescription",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['HasWBSLines']"
+											},
+											"sink": {
+												"name": "HasWBSLines",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['ID']"
+											},
+											"sink": {
+												"name": "ID",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['IncludeInvoiceSpecification']"
+											},
+											"sink": {
+												"name": "IncludeInvoiceSpecification",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['IncludeSpecificationInInvoicePdf']"
+											},
+											"sink": {
+												"name": "IncludeSpecificationInInvoicePdf",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['InvoiceAddress']"
+											},
+											"sink": {
+												"name": "InvoiceAddress",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['InvoiceAsQuoted']"
+											},
+											"sink": {
+												"name": "InvoiceAsQuoted",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['InvoiceTerms']['__deferred']['uri']"
+											},
+											"sink": {
+												"name": "d_results'][0]['InvoiceTerms___deferred_uri",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['Manager']"
+											},
+											"sink": {
+												"name": "Manager",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['ManagerFullname']"
+											},
+											"sink": {
+												"name": "ManagerFullname",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['MarkupPercentage']"
+											},
+											"sink": {
+												"name": "MarkupPercentage",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['Modified']"
+											},
+											"sink": {
+												"name": "Modified",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['Modifier']"
+											},
+											"sink": {
+												"name": "Modifier",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['ModifierFullName']"
+											},
+											"sink": {
+												"name": "ModifierFullName",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['Notes']"
+											},
+											"sink": {
+												"name": "Notes",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['InternalNotes']"
+											},
+											"sink": {
+												"name": "InternalNotes",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['ProjectRestrictionEmployees']['__deferred']['uri']"
+											},
+											"sink": {
+												"name": "d_results'][0]['ProjectRestrictionEmployees___deferred_uri",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['ProjectRestrictionItems']['__deferred']['uri']"
+											},
+											"sink": {
+												"name": "d_results'][0]['ProjectRestrictionItems___deferred_uri",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['ProjectRestrictionRebillings']['__deferred']['uri']"
+											},
+											"sink": {
+												"name": "d_results'][0]['ProjectRestrictionRebillings___deferred_uri",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['SalesTimeQuantity']"
+											},
+											"sink": {
+												"name": "SalesTimeQuantity",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['SourceQuotation']"
+											},
+											"sink": {
+												"name": "SourceQuotation",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['StartDate']"
+											},
+											"sink": {
+												"name": "StartDate",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['TimeQuantityToAlert']"
+											},
+											"sink": {
+												"name": "TimeQuantityToAlert",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['Type']"
+											},
+											"sink": {
+												"name": "Type",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['TypeDescription']"
+											},
+											"sink": {
+												"name": "TypeDescription",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['PrepaidItem']"
+											},
+											"sink": {
+												"name": "PrepaidItem",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['PrepaidItemDescription']"
+											},
+											"sink": {
+												"name": "PrepaidItemDescription",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['PrepaidType']"
+											},
+											"sink": {
+												"name": "PrepaidType",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['PrepaidTypeDescription']"
+											},
+											"sink": {
+												"name": "PrepaidTypeDescription",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['UseBillingMilestones']"
+											},
+											"sink": {
+												"name": "UseBillingMilestones",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['BudgetOverrunHours']"
+											},
+											"sink": {
+												"name": "BudgetOverrunHours",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['CustomField']"
+											},
+											"sink": {
+												"name": "CustomField",
+												"type": "String"
+											}
+										},
+										{
+											"source": {
+												"path": "$['d']['results'][0]['AllowMemberEntryOnly']"
+											},
+											"sink": {
+												"name": "AllowMemberEntryOnly",
+												"type": "String"
+											}
+										}
+									],
+									"collectionReference": "$['d']['results']",
+									"mapComplexValuesToString": true
+								}
+							},
+							"inputs": [
+								{
+									"referenceName": "rest_project",
+									"type": "DatasetReference",
+									"parameters": {
+										"DivisionCode": {
+											"value": "@{item().DivisionCode}",
+											"type": "Expression"
+										}
+									}
+								}
+							],
+							"outputs": [
+								{
+									"referenceName": "csv_generic",
+									"type": "DatasetReference",
+									"parameters": {
+										"Layer": "raw",
+										"FolderName": {
+											"value": "@toLower('')",
+											"type": "Expression"
+										},
+										"DivisionName": {
+											"value": "@concat('/',item().DivisionCode)",
+											"type": "Expression"
+										},
+										"FileNamePrefix": {
+											"value": "@toLower('')",
+											"type": "Expression"
+										},
+										"FileName": "project.csv",
+										"Subject": "project"
+									}
+								}
+							]
+						}
+					]
+				}
+			},
+			{
+				"name": "Check Duration",
+				"type": "ExecutePipeline",
+				"dependsOn": [
+					{
+						"activity": "Loop Over Divisions",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Check Duration",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true
+				}
+			}
+		],
+		"variables": {
+			"insert_date": {
+				"type": "String"
+			},
+			"insertdate": {
+				"type": "String"
+			},
+			"refreshtoken_new": {
+				"type": "String"
+			}
+		},
+		"annotations": [],
+		"lastPublishTime": "2022-12-13T10:55:38Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

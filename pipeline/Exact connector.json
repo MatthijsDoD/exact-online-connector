@@ -1,0 +1,196 @@
+{
+	"name": "Exact connector",
+	"properties": {
+		"activities": [
+			{
+				"name": "Get Last Refresh Token",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"queryTimeout": "00:10:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "sql_last_refreshtoken",
+						"type": "DatasetReference"
+					},
+					"firstRowOnly": true
+				}
+			},
+			{
+				"name": "Set Old Refresh Token",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Get Last Refresh Token",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "refreshtoken_old",
+					"value": {
+						"value": "@activity('Get Last Refresh Token').output.firstRow.RefreshToken",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Get Access Token",
+				"type": "WebActivity",
+				"dependsOn": [
+					{
+						"activity": "Set Old Refresh Token",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"url": "https://start.exactonline.nl/api/oauth2/token",
+					"method": "POST",
+					"headers": {
+						"Content-Type": "application/x-www-form-urlencoded"
+					},
+					"body": {
+						"value": "@concat('grant_type=refresh_token&client_id=dd0c77c1-fec2-4ca0-a53e-0919ec103a90&client_secret=h2eV3eKu0LuU&refresh_token=', variables('refreshtoken_old'))",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Set New Access Token",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Get Access Token",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "accesstoken",
+					"value": {
+						"value": "@activity('Get Access Token').output.access_token",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Set New Refresh Token",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Set New Access Token",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "refreshtoken_new",
+					"value": {
+						"value": "@activity('Get Access Token').output.refresh_token",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Write Tokens to DB",
+				"type": "SqlServerStoredProcedure",
+				"dependsOn": [
+					{
+						"activity": "Set Insert Date",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "sp_executesql",
+					"storedProcedureParameters": {
+						"stmt": {
+							"value": {
+								"value": "@concat('TRUNCATE TABLE etl.RefreshToken; TRUNCATE TABLE etl.AccessToken; INSERT INTO etl.RefreshToken([RefreshToken]) VALUES(''',variables('refreshtoken_new'),'''); INSERT INTO etl.AccessToken([AccessToken]) VALUES(''',variables('accesstoken'),'''); UPDATE [etl].[AccessToken] SET InsertDate = (''', variables('insertdate'), '''); ')",
+								"type": "Expression"
+							},
+							"type": "String"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "my_linked_sql_connection",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "Set Insert Date",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Set New Refresh Token",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "insertdate",
+					"value": {
+						"value": "@pipeline().TriggerTime",
+						"type": "Expression"
+					}
+				}
+			}
+		],
+		"variables": {
+			"refreshtoken_old": {
+				"type": "String"
+			},
+			"accesstoken": {
+				"type": "String"
+			},
+			"refreshtoken_new": {
+				"type": "String"
+			},
+			"insertdate": {
+				"type": "String"
+			}
+		},
+		"annotations": [],
+		"lastPublishTime": "2022-12-13T10:55:38Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

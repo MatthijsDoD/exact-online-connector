@@ -1,0 +1,24 @@
+{
+	"name": "Retrieve divisions 5 min",
+	"properties": {
+		"annotations": [],
+		"runtimeState": "Started",
+		"pipelines": [
+			{
+				"pipelineReference": {
+					"referenceName": "Retrieve Divisions",
+					"type": "PipelineReference"
+				}
+			}
+		],
+		"type": "ScheduleTrigger",
+		"typeProperties": {
+			"recurrence": {
+				"frequency": "Minute",
+				"interval": 5,
+				"startTime": "2022-12-09T08:49:00Z",
+				"timeZone": "UTC"
+			}
+		}
+	}
+}

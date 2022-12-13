@@ -1,0 +1,17 @@
+{
+	"name": "sql_last_refreshtoken",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "my_linked_sql_connection",
+			"type": "LinkedServiceReference"
+		},
+		"annotations": [],
+		"type": "AzureSqlTable",
+		"schema": [],
+		"typeProperties": {
+			"schema": "etl",
+			"table": "RefreshToken"
+		}
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

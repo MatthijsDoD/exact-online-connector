@@ -1,0 +1,63 @@
+{
+	"name": "Main Pipeline",
+	"properties": {
+		"activities": [
+			{
+				"name": "Refresh Accesstoken",
+				"type": "ExecutePipeline",
+				"dependsOn": [],
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Exact connector",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true
+				}
+			},
+			{
+				"name": "Retrieve Divisions",
+				"type": "ExecutePipeline",
+				"dependsOn": [
+					{
+						"activity": "Refresh Accesstoken",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Retrieve Divisions",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true
+				}
+			},
+			{
+				"name": "Loop Over Divisions",
+				"type": "ExecutePipeline",
+				"dependsOn": [
+					{
+						"activity": "Retrieve Divisions",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Loop Over Divisions",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true
+				}
+			}
+		],
+		"annotations": [],
+		"lastPublishTime": "2022-12-13T11:01:40Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

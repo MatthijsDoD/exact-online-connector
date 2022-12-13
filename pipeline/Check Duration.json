@@ -1,0 +1,114 @@
+{
+	"name": "Check Duration",
+	"properties": {
+		"activities": [
+			{
+				"name": "Get Time Passed",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": "SELECT TimePassed =\nDATEDIFF(SECOND,InsertDate,SYSDATETIME())\nFROM etl.[AccessToken];",
+						"queryTimeout": "00:10:00",
+						"isolationLevel": "ReadCommitted",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "sql_last_accesstoken",
+						"type": "DatasetReference"
+					}
+				}
+			},
+			{
+				"name": "Check Duration",
+				"type": "IfCondition",
+				"dependsOn": [
+					{
+						"activity": "Get Time Passed",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"expression": {
+						"value": "@lessOrEquals(activity('Get Time Passed').output.firstRow.TimePassed,480)",
+						"type": "Expression"
+					},
+					"ifFalseActivities": [
+						{
+							"name": "Wait for 2 minutes",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": "sp_executesql",
+								"storedProcedureParameters": {
+									"stmt": {
+										"value": "WAITFOR DELAY '00:02'",
+										"type": "String"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "my_linked_sql_connection",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "refresh_accesstoken",
+							"type": "ExecutePipeline",
+							"dependsOn": [
+								{
+									"activity": "Wait for 2 minutes",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"userProperties": [],
+							"typeProperties": {
+								"pipeline": {
+									"referenceName": "Exact connector",
+									"type": "PipelineReference"
+								},
+								"waitOnCompletion": true
+							}
+						}
+					]
+				}
+			}
+		],
+		"variables": {
+			"insert_date": {
+				"type": "String"
+			},
+			"insertdate": {
+				"type": "String"
+			},
+			"refreshtoken_new": {
+				"type": "String"
+			}
+		},
+		"annotations": [],
+		"lastPublishTime": "2022-12-13T10:55:38Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}
