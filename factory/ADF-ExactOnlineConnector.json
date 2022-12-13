@@ -1,0 +1,9 @@
+{
+	"name": "ADF-ExactOnlineConnector",
+	"location": "westeurope",
+	"identity": {
+		"type": "SystemAssigned",
+		"principalId": "3b60dae8-3d4a-4f71-923c-704da34f1b3a",
+		"tenantId": "34b40c8a-33f9-4277-afdb-6d0a2911fadc"
+	}
+}
